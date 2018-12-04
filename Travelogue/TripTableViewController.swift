@@ -7,6 +7,7 @@
 //
 
 import UIKit
+import CoreData
 
 class TripTableViewController: UITableViewController {
 
@@ -22,12 +23,28 @@ class TripTableViewController: UITableViewController {
         
         formatter.dateStyle = .medium
         formatter.timeStyle = .medium
-    
-        let entries: [Entry] = [Entry(title: "Rain", description: "An image of rain", date: Date(timeIntervalSinceNow: 0), image: UIImage(named: "rain")!), Entry(title: "Wind", description: "An image of wind", date: Date(timeIntervalSinceNow: 0), image: UIImage(named: "wind")!), Entry(title: "Night", description: "An image of night", date: Date(timeIntervalSinceNow: 0), image: UIImage(named: "night")!), Entry(title: "Day", description: "An image of day", date: Date(timeIntervalSinceNow: 0), image: UIImage(named: "day")!)]
-        
-        travelogue.append(Trip(name: "test1", description: "test description here you can test the description.", createdDate: Date(timeIntervalSinceNow: 0), entries: entries))
+        tableView.separatorStyle = .none
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        loadTravelogue()
+        tableView.reloadData()
+    }
+    
+    func loadTravelogue() {
+        guard let appDelegate = UIApplication.shared.delegate as? AppDelegate else { return }
+        let managedContext = appDelegate.persistentContainer.viewContext
+        let fetchRequest: NSFetchRequest<Trip> = Trip.fetchRequest()
+        
+        do {
+            travelogue = try managedContext.fetch(fetchRequest)
+            tableView.reloadData()
+        } catch {
+            createFailAlert(message: "Failed to load data", error: error as! String, parent: self)
+        }
+    }
+    
     // MARK: - Table view data source
 
     override func numberOfSections(in tableView: UITableView) -> Int {
@@ -44,9 +61,11 @@ class TripTableViewController: UITableViewController {
         let row = indexPath.row
         
         if let cell = cell as? TripTableViewCell {
-            if let date = travelogue[row].createdDate, let name = travelogue[row].name {
+            if let date = travelogue[row].modifiedDate, let name = travelogue[row].name {
                 cell.tripLabel.text = name
                 cell.createdLabel.text = "Created on: \(formatter.string(from: date))"
+                cell.bgView.layer.cornerRadius = 5.0
+                cell.bgView.backgroundColor = UIColor.red
             }
         }
 
@@ -60,54 +79,99 @@ class TripTableViewController: UITableViewController {
     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
         if let destination = segue.destination as? EntryCollectionViewController {
             if let row = tableView.indexPathForSelectedRow?.row {
-                destination.entries = travelogue[row].entries
+                destination.trip = travelogue[row]
             }
         }
     }
-
-    /*
-    // Override to support conditional editing of the table view.
-    override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-        // Return false if you do not want the specified item to be editable.
-        return true
+    
+    override func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath) -> [UITableViewRowAction]? {
+        let delete = UITableViewRowAction(style: .default, title: "Delete") {
+            action, index in
+            self.handleDelete(indexPath: indexPath)
+        }
+        delete.backgroundColor = UIColor.red
+        
+        let edit = UITableViewRowAction(style: .default, title: "Edit") {
+            action, index in
+            self.handleEdit(indexPath: indexPath)
+        }
+        edit.backgroundColor = UIColor.blue
+        
+        return [delete, edit]
     }
-    */
-
-    /*
-    // Override to support editing the table view.
-    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCellEditingStyle, forRowAt indexPath: IndexPath) {
-        if editingStyle == .delete {
+    
+    func handleEdit(indexPath: IndexPath) {
+        let alert = UIAlertController(title: "Enter a new trip name", message: "", preferredStyle: .alert)
+        
+        alert.addTextField { (textField) in
+            textField.text = ""
+        }
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .default, handler: { action in
+            return
+        }))
+        
+        alert.addAction(UIAlertAction(title: "Submit", style: .default, handler: { [weak alert] (_) in
+            let textField = alert?.textFields![0]
+            
+            if let updatedName = textField?.text {
+                if updatedName == "" {
+                    return
+                } else {
+                    self.travelogue[indexPath.row].update(name: updatedName)
+                    
+                    if let context = self.travelogue[indexPath.row].managedObjectContext {
+                        do {
+                            try context.save()
+                        } catch {
+                            createFailAlert(message: "Failed to save", error: error as! String, parent: self)
+                        }
+                    }
+                    self.tableView.reloadData()
+                }
+            } else {
+                return
+            }
+        }))
+        
+        self.present(alert, animated: true, completion: nil)
+    }
+    
+    func handleDelete(indexPath: IndexPath) {
+        if let entries = travelogue[indexPath.row].rawEntries{
+            if entries.count == 0 {
+                delete(indexPath: indexPath)
+                return;
+            }
+        }
+        
+        let alert = UIAlertController(title: "Are you sure you want to delete?", message: "", preferredStyle: .alert)
+        
+        alert.addAction(UIAlertAction(title: "Yes", style: .default, handler: { action in
             // Delete the row from the data source
-            tableView.deleteRows(at: [indexPath], with: .fade)
-        } else if editingStyle == .insert {
-            // Create a new instance of the appropriate class, insert it into the array, and add a new row to the table view
-        }    
+            self.delete(indexPath: indexPath)
+        }))
+        
+        alert.addAction(UIAlertAction(title: "No", style: .cancel, handler: { action in
+            return
+        }))
+        
+        self.present(alert, animated: true)
     }
-    */
-
-    /*
-    // Override to support rearranging the table view.
-    override func tableView(_ tableView: UITableView, moveRowAt fromIndexPath: IndexPath, to: IndexPath) {
-
+    
+    func delete(indexPath: IndexPath) {
+        let trip = self.travelogue[indexPath.row]
+        
+        if let managedObjectContext = trip.managedObjectContext {
+            managedObjectContext.delete(trip)
+            
+            do {
+                try managedObjectContext.save()
+                self.travelogue.remove(at: indexPath.row)
+                tableView.deleteRows(at: [indexPath], with: .fade)
+            } catch {
+                createFailAlert(message: "Delete failed", error: error as! String, parent: self)
+            }
+        }
     }
-    */
-
-    /*
-    // Override to support conditional rearranging of the table view.
-    override func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
-        // Return false if you do not want the item to be re-orderable.
-        return true
-    }
-    */
-
-    /*
-    // MARK: - Navigation
-
-    // In a storyboard-based application, you will often want to do a little preparation before navigation
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        // Get the new view controller using segue.destination.
-        // Pass the selected object to the new view controller.
-    }
-    */
-
 }

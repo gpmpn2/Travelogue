@@ -12,6 +12,7 @@ class TripTableViewCell: UITableViewCell {
 
     @IBOutlet weak var tripLabel: UILabel!
     @IBOutlet weak var createdLabel: UILabel!
+    @IBOutlet weak var bgView: UIView!
     override func awakeFromNib() {
         super.awakeFromNib()
         // Initialization code

@@ -12,6 +12,7 @@ private let reuseIdentifier = "entryIdentifier"
 
 class EntryCollectionViewController: UICollectionViewController {
 
+    var trip: Trip?
     var entries = [Entry]()
     
     override func viewDidLoad() {
@@ -27,6 +28,16 @@ class EntryCollectionViewController: UICollectionViewController {
         title = "Entries"
         navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(self.addEntry))
     }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        loadEntries()
+        collectionView.reloadData()
+    }
+    
+    func loadEntries() {
+        entries = trip?.rawEntries?.array as? [Entry] ?? [Entry]()
+    }
 
     @objc
     func addEntry() {
@@ -40,6 +51,7 @@ class EntryCollectionViewController: UICollectionViewController {
                 let index: IndexPath = indexPaths[0] as! IndexPath
                 destination.entry = entries[index.row]
             }
+            destination.trip = trip
         }
     }
 
@@ -58,7 +70,9 @@ class EntryCollectionViewController: UICollectionViewController {
         let row = indexPath.row
     
         if let cell = cell as? EntryCollectionViewCell {
-            cell.entryImageView.image = entries[row].image
+            if let image = entries[row].image as Data? {
+                cell.entryImageView.image = UIImage(data: image)
+            }
         }
     
         return cell

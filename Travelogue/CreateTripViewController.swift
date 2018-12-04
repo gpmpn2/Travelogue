@@ -7,6 +7,7 @@
 //
 
 import UIKit
+import CoreData
 
 class CreateTripViewController: UIViewController {
 
@@ -21,16 +22,37 @@ class CreateTripViewController: UIViewController {
         tripDescriptionTextView.layer.cornerRadius = 3.0
         createTripButton.layer.cornerRadius = 3.0
         self.title = "Create Trip"
+        
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
     }
     
-    @IBAction func updateTitleLabel(_ sender: Any) {
+    @IBAction func updateTitleLabel(_ sender: UITextField) {
         title = tripTitleBox.text
     }
     
     @IBAction func createTrip(_ sender: Any) {
         if checkSave() {
-            //Save here
+            saveTrip()
             navigationController?.popViewController(animated: true)
+        }
+    }
+    
+    func saveTrip() {
+        if let name = tripTitleBox.text {
+            let trip = Trip(name: name, desc: tripDescriptionTextView.text)
+            
+            if let trip = trip {
+                do {
+                    let managedObjectContext = trip.managedObjectContext
+                    try managedObjectContext?.save()
+                    self.navigationController?.popViewController(animated: true)
+                } catch {
+                    createFailAlert(message: "Failed to save trip", error: error as! String, parent: self)
+                }
+            } else {
+                createFailAlert(message: "Failed to create trip", error: "Error", parent: self)
+            }
         }
     }
     
@@ -50,5 +72,21 @@ class CreateTripViewController: UIViewController {
         let alertController = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alertController.addAction(UIAlertAction(title: "OK", style: .default, handler: nil))
         present(alertController, animated: true, completion: nil)
+    }
+    
+    @objc func keyboardWillShow(notification: NSNotification) {
+        if let keyboardSize = (notification.userInfo?[UIResponder.keyboardFrameBeginUserInfoKey] as? NSValue)?.cgRectValue {
+            if self.view.frame.origin.y == 0{
+                self.view.frame.origin.y -= (keyboardSize.height / 2)
+            }
+        }
+    }
+    
+    @objc func keyboardWillHide(notification: NSNotification) {
+        if let keyboardSize = (notification.userInfo?[UIResponder.keyboardFrameBeginUserInfoKey] as? NSValue)?.cgRectValue {
+            if self.view.frame.origin.y != 0{
+                self.view.frame.origin.y += (keyboardSize.height / 2)
+            }
+        }
     }
 }

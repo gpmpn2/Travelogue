@@ -12,12 +12,14 @@ import Photos
 class CreateEntryViewController: UIViewController, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
 
     var entry: Entry?
+    var trip: Trip?
     @IBOutlet weak var imageView: UIImageView!
     @IBOutlet weak var entryTitle: UILabel!
     @IBOutlet weak var entryDescription: UILabel!
     @IBOutlet weak var entryTextBox: UITextField!
     @IBOutlet weak var entryTextView: UITextView!
     @IBOutlet weak var entryButton: UIButton!
+    @IBOutlet weak var deleteEntryButton: UIButton!
     var canEdit = true
     let imagePickerController = UIImagePickerController()
     
@@ -40,25 +42,54 @@ class CreateEntryViewController: UIViewController, UINavigationControllerDelegat
             updateEntry(editable: canEdit)
         } else {
             canEdit = false
+            deleteEntryButton.isHidden = true
         }
         
         title = entryTextBox.text
+        
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
+
     }
     
     @IBAction func createEntry(_ sender: Any) {
-        print(canEdit)
-        
         if !canEdit && checkSave() {
-            //save
-            navigationController?.popViewController(animated: true)
+            saveEntry()
         } else if canEdit {
             canEdit = !canEdit
             updateEntry(editable: canEdit)
         }
     }
     
+    func saveEntry() {
+        if let title = entryTextBox.text, let image = imageView.image, let trip = trip {
+            
+            if entry == nil {
+                entry = Entry(title: title, desc: entryTextView.text, image: image, trip: trip)
+            } else {
+                entry?.update(title: title, desc: entryTextView.text, image: image, trip: trip)
+            }
+
+            if let entry = entry {
+                do {
+                    let managedObjectContext = entry.managedObjectContext
+                    try managedObjectContext?.save()
+                    self.navigationController?.popViewController(animated: true)
+                } catch {
+                    createFailAlert(message: "Failed to save trip", error: error as! String, parent: self)
+                }
+            } else {
+                createFailAlert(message: "Failed to create trip", error: "Error", parent: self)
+            }
+        }
+    }
+    
     @IBAction func updateTitle(_ sender: Any) {
         title = entryTextBox.text
+    }
+    
+    @IBAction func deleteEntry(_ sender: Any) {
+        deleteEntry()
     }
     
     @objc
@@ -79,9 +110,9 @@ class CreateEntryViewController: UIViewController, UINavigationControllerDelegat
             if (!UIImagePickerController.isSourceTypeAvailable(.camera)) {
                 presentAlert(title: "No Camera", message: "This device has no camera.")
             } else {
-                imagePickerController.allowsEditing = false
-                imagePickerController.sourceType = .camera
-                present(imagePickerController, animated: true, completion: nil)
+                self.imagePickerController.allowsEditing = false
+                self.imagePickerController.sourceType = .camera
+                self.present(imagePickerController, animated: true, completion: nil)
             }
         } else {
             AVCaptureDevice.requestAccess(for: .video, completionHandler: { (granted: Bool) in
@@ -98,13 +129,6 @@ class CreateEntryViewController: UIViewController, UINavigationControllerDelegat
                 }
             })
         }
-        if (!UIImagePickerController.isSourceTypeAvailable(.camera)) {
-            presentAlert(title: "No Camera", message: "This device has no camera.")
-        } else {
-            imagePickerController.allowsEditing = false
-            imagePickerController.sourceType = .camera
-            present(imagePickerController, animated: true, completion: nil)
-        }
     }
     
     func selectPhotoFromLibrary() {
@@ -114,9 +138,9 @@ class CreateEntryViewController: UIViewController, UINavigationControllerDelegat
             self.imagePickerController.allowsEditing = false
             self.imagePickerController.sourceType = .photoLibrary
             self.present(self.imagePickerController, animated: true, completion: nil)
-        } else if photos == .notDetermined {
+        } else if photos == .notDetermined || photos == .denied {
             PHPhotoLibrary.requestAuthorization({status in
-                if status == .authorized{
+                if status == .authorized {
                     self.imagePickerController.allowsEditing = false
                     self.imagePickerController.sourceType = .photoLibrary
                     self.present(self.imagePickerController, animated: true, completion: nil)
@@ -144,15 +168,33 @@ class CreateEntryViewController: UIViewController, UINavigationControllerDelegat
         dismiss(animated: true, completion: nil)
     }
     
+    func deleteEntry() {
+        if let entry = entry {
+            if let managedObjectContext = entry.managedObjectContext {
+                managedObjectContext.delete(entry)
+                
+                do {
+                    try managedObjectContext.save()
+                    navigationController?.popViewController(animated: true)
+                } catch {
+                    createFailAlert(message: "Entry failed to delete", error: "Error", parent: self)
+                }
+            }
+        }
+    }
+    
     func updateEntry(editable: Bool) {
+        deleteEntryButton.isHidden = false
         if editable {
-            imageView.image = entry?.image
+            if let imageData = entry?.image as Data? {
+                imageView.image = UIImage(data: imageData)
+            }
             imageView.isUserInteractionEnabled = false
             entryTitle.text = entry?.title
             entryDescription.text = "Entry Description"
             entryTextBox.isHidden = true
             entryTextBox.text = entry?.title
-            entryTextView.text = entry?.description
+            entryTextView.text = entry?.desc
             entryTextView.isUserInteractionEnabled = false
             entryButton.setTitle("Edit Entry", for: .normal)
         } else {
@@ -178,5 +220,21 @@ class CreateEntryViewController: UIViewController, UINavigationControllerDelegat
             return false
         }
         return true
+    }
+    
+    @objc func keyboardWillShow(notification: NSNotification) {
+        if let keyboardSize = (notification.userInfo?[UIResponder.keyboardFrameBeginUserInfoKey] as? NSValue)?.cgRectValue {
+            if self.view.frame.origin.y == 0{
+                self.view.frame.origin.y -= ((keyboardSize.height) - 65)
+            }
+        }
+    }
+    
+    @objc func keyboardWillHide(notification: NSNotification) {
+        if let keyboardSize = (notification.userInfo?[UIResponder.keyboardFrameBeginUserInfoKey] as? NSValue)?.cgRectValue {
+            if self.view.frame.origin.y != 0{
+                self.view.frame.origin.y += ((keyboardSize.height) + 65)
+            }
+        }
     }
 }
